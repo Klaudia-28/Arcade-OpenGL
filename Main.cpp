@@ -1,45 +1,49 @@
 // ==========================================================================
-//  PROYECTO FINAL - ARCADE (adelanto)
-//  Contiene: habitación con texturas, tres máquinas arcade .glb
-//  y cámara en primera persona.
+//                         PROYECTO FINAL - ARCADE
 //
-//  Crédito del modelo 3D: "arcade machine" por Logotyp (Sketchfab),
-//  licencia CC-BY-4.0 -> https://sketchfab.com/3d-models/arcade-machine-a914bf3651e3496ea708dc0782eca212
+//  Crédito del modelo 3D "arcade machine": Logotyp (Sketchfab),
+//  licencia CC-BY-4.0:
+//  https://sketchfab.com/3d-models/arcade-machine-a914bf3651e3496ea708dc0782eca212
 // ==========================================================================
 
-#include <iostream>              // Permite mostrar mensajes en la consola
-#include <vector>                // Listas de tamaño variable (std::vector)
+#include <iostream>              // Salida de mensajes en consola
+#include <vector>                // Contenedores para almacenar piezas, modelos y texturas
 #include <string>
-#include <glad/glad.h>           // Funciones de OpenGL (siempre antes de GLFW)
-#include <GLFW/glfw3.h>          // Crea la ventana, y maneja el teclado y el mouse
+#include <glad/glad.h>           // Funciones de OpenGL
+#include <GLFW/glfw3.h>          // Ventana y entrada de teclado y mouse
 
-#define GLM_ENABLE_EXPERIMENTAL  // debe ir ANTES de cualquier include de GLM
-#include <glm/glm.hpp>                       // Vectores y matrices (vec3, mat4)
-#include <glm/gtc/matrix_transform.hpp>      // translate, rotate, scale, lookAt, perspective
-#include <glm/gtc/type_ptr.hpp>              // value_ptr: pasar matrices de glm a OpenGL
-#include <glm/gtc/quaternion.hpp>            // quat y mat4_cast (rotaciones de glTF)
+#define GLM_ENABLE_EXPERIMENTAL  // Habilita funciones experimentales de GLM
+#include <glm/glm.hpp>                       // Vectores y matrices
+#include <glm/gtc/matrix_transform.hpp>      // Operaciones de transformación y cámara
+#include <glm/gtc/type_ptr.hpp>              // Conversión de matrices y vectores para enviarlos a OpenGL
+#include <glm/gtc/quaternion.hpp>            // Cuaterniones para interpretar rotaciones de los nodos GLTF
 
 // ---- Librería para cargar el modelo (tinygltf, versión 2.9.x) ----
 // Estas líneas se escriben UNA sola vez en todo el proyecto, justo antes del include:
-#define TINYGLTF_IMPLEMENTATION          // activa el código real del cargador
-#define STB_IMAGE_IMPLEMENTATION         // activa el código que decodifica las imágenes (png, jpg)
-#define TINYGLTF_NO_STB_IMAGE_WRITE      // no necesitamos guardar imágenes
+#define TINYGLTF_IMPLEMENTATION          // Implementación de TinyGLTF en este archivo
+#define STB_IMAGE_IMPLEMENTATION         // Implementación de STB Image en este archivo
+#define TINYGLTF_NO_STB_IMAGE_WRITE      // Deshabilita funciones de escritura de imágenes que no utilizo
 #include "tiny_gltf.h"
+#include "Clases/Shader.h"
+
 
 // ==========================================================================
-//  VARIABLES GLOBALES DE LA CÁMARA (las usan el render loop y el mouse)
+//                 MATRICES DE TRASLACIÓN DE LA CÁMARA
 // ==========================================================================
+// La posición y los vectores de orientación definen desde dónde observa
+// la cámara y hacia qué dirección está mirando dentro de la habitación.
 float anchoCuarto = 10.0f;   // tamaño de la habitación: TODO se calcula a partir de estos 3 números
 float largoCuarto = 10.0f;
 float altoCuarto = 3.6f;
-float alturaOjos = 1.6f;     // la cámara siempre se queda a esta altura (como si caminaras)
+float alturaOjos = 1.6f;     // la cámara siempre se queda a esta altura (como si caminara)
 
 glm::vec3 cameraPos = glm::vec3(0.0f, 1.6f, 4.0f);     // dónde está la cámara
 glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);  // hacia dónde mira
 glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);      // vector "arriba"
 
-float yaw = -90.0f;     // giro horizontal (-90 = mirando hacia -Z)
-float pitch = 0.0f;     // giro vertical
+// yaw controla el giro horizontal y pitch la inclinación vertical de la cámara.
+float yaw = -90.0f;
+float pitch = 0.0f;
 float ultimoX = 500.0f;
 float ultimoY = 350.0f;
 bool primeraVezMouse = true;
@@ -54,7 +58,8 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height)
     glViewport(0, 0, width, height);
 }
 
-// GLFW la llama cada vez que se mueve el mouse (o el touchpad)
+// El movimiento del mouse modifica yaw y pitch; con esos ángulos se actualiza
+// cameraFront para orientar la cámara sin cambiar su posición.
 void mouse_callback(GLFWwindow* window, double xpos, double ypos)
 {
     if (primeraVezMouse)
@@ -76,7 +81,8 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos)
     if (pitch > 89.0f) pitch = 89.0f;        // para que la cámara no se voltee de cabeza
     if (pitch < -89.0f) pitch = -89.0f;
 
-    // Con los dos ángulos se calcula hacia dónde mira la cámara (trigonometría)
+    // Se convierten los ángulos a una dirección en 3D y se normalizan para obtener
+    // un vector unitario que indique hacia dónde está mirando la cámara
     glm::vec3 direccion;
     direccion.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
     direccion.y = sin(glm::radians(pitch));
@@ -84,7 +90,7 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos)
     cameraFront = glm::normalize(direccion);
 }
 
-// Revisa si un shader compiló bien; si no, imprime el error en la consola.
+// Revisa si un shader compiló bien, si no, imprime el error en la consola
 void revisarShader(GLuint shader, const char* nombre)
 {
     GLint ok;
@@ -137,11 +143,14 @@ GLuint cargarTextura(const char* ruta)
 }
 
 // ==========================================================================
-//  CARGA DEL MODELO .GLB
-//  Un modelo glTF está hecho de "nodos" (que tienen una matriz de posición/rotación/escala)
-//  y cada nodo puede tener una malla (mesh) formada por una o más "primitivas" (triángulos).
-//  Aquí cada primitiva se convierte en una "Pieza" con su propio VAO/VBO/EBO y su material.
+//                         CARGA DE MODELOS GLTF
 // ==========================================================================
+// Un archivo GLTF organiza el modelo mediante nodos, mallas, primitivas y
+// materiales. 
+// Recorre esa estructura para separar cada pieza y preparar sus
+// datos de geometría, sus texturas y sus transformaciones.
+// Cada primitiva del modelo se guarda como una pieza independiente, con sus
+// propios buffers, material y matriz dentro de la jerarquía del modelo.
 struct Pieza
 {
     GLuint VAO = 0, VBO = 0, EBO = 0;
@@ -153,6 +162,7 @@ struct Pieza
     bool transparente = false;                // true para vidrios
 };
 
+// Un modelo reúne todas sus piezas y una matriz para centrarlo y ajustar su tamaño.
 struct ModeloCargado
 {
     std::vector<Pieza> piezas;
@@ -162,7 +172,8 @@ struct ModeloCargado
 std::vector<GLuint> cacheTexturas;   // evita subir dos veces la misma imagen del modelo
 std::vector<GLuint> texturasCargadas; // guarda las texturas de todos los modelos para liberarlas al final
 
-// Devuelve la textura de GPU para la textura número "idxTextura" del glTF (la crea si hace falta)
+// Reutilizo las texturas que ya fueron cargadas para evitar subir varias veces
+// la misma imagen del archivo GLTF a la memoria de la GPU.
 GLuint texturaDelModelo(const tinygltf::Model& model, int idxTextura)
 {
     if (idxTextura < 0) return 0;
@@ -179,7 +190,8 @@ GLuint texturaDelModelo(const tinygltf::Model& model, int idxTextura)
     return cacheTexturas[idxImagen];
 }
 
-// Matriz de un nodo: glTF la entrega como "matrix" o como traslación + rotación + escala
+// Cada nodo puede traer una matriz completa o sus transformaciones por separado
+// En este último caso se construye la matriz combinando traslación, rotación y escala
 glm::mat4 matrizDelNodo(const tinygltf::Node& nodo)
 {
     if (nodo.matrix.size() == 16)
@@ -198,7 +210,8 @@ glm::mat4 matrizDelNodo(const tinygltf::Node& nodo)
     return m;
 }
 
-// Devuelve un puntero al inicio de los datos de un "accessor" (posiciones, normales, uv...)
+// Los accessors indican dónde están guardados los atributos de la malla
+// Esta función obtiene el inicio de esos datos y la separación entre elementos
 const unsigned char* datosAccessor(const tinygltf::Model& model, int idxAccessor, int& stride)
 {
     const tinygltf::Accessor& acc = model.accessors[idxAccessor];
@@ -208,7 +221,7 @@ const unsigned char* datosAccessor(const tinygltf::Model& model, int idxAccessor
     return &buf.data[bv.byteOffset + acc.byteOffset];
 }
 
-// Recorre un nodo (y sus hijos) creando una Pieza por cada primitiva de triángulos que encuentre
+// Recorre la estructura del modelo y recupera la informacion de cada uno
 void procesarNodo(const tinygltf::Model& model, int idxNodo, const glm::mat4& matrizPadre,
     std::vector<Pieza>& piezas, glm::vec3& bbMin, glm::vec3& bbMax)
 {
@@ -223,7 +236,8 @@ void procesarNodo(const tinygltf::Model& model, int idxNodo, const glm::mat4& ma
             if (prim.mode != TINYGLTF_MODE_TRIANGLES) continue;
             if (prim.attributes.find("POSITION") == prim.attributes.end()) continue;
 
-            // ---- 1) Leer posiciones, normales y coordenadas de textura ----
+            // Primero se recuperan los atributos de cada vértice: posición, normal,
+            // coordenadas UV y, cuando existen, los colores definidos en COLOR_0.
             int stridePos, strideNor = 0, strideUv = 0;
             int accPos = prim.attributes.at("POSITION");
             const unsigned char* pPos = datosAccessor(model, accPos, stridePos);
@@ -235,10 +249,23 @@ void procesarNodo(const tinygltf::Model& model, int idxNodo, const glm::mat4& ma
             const unsigned char* pUv = nullptr;
             if (prim.attributes.count("TEXCOORD_0"))
                 pUv = datosAccessor(model, prim.attributes.at("TEXCOORD_0"), strideUv);
+            // Leer los colores de los vértices (COLOR_0)
+            int strideColor = 0;
+            const unsigned char* pColor = nullptr;
 
-            // Cada vértice queda como 8 floats: posición(3) + normal(3) + uv(2)
+            if (prim.attributes.count("COLOR_0"))
+            {
+                pColor = datosAccessor(
+                    model,
+                    prim.attributes.at("COLOR_0"),
+                    strideColor
+                );
+            }
+
+            // Cada vértice tiene 12 floats:
+            // posición(3) + normal(3) + uv(2) + color(4)
             std::vector<float> vertices;
-            vertices.reserve(numVertices * 8);
+            vertices.reserve(numVertices * 12);
             for (size_t i = 0; i < numVertices; i++)
             {
                 const float* p = (const float*)(pPos + i * stridePos);
@@ -255,6 +282,25 @@ void procesarNodo(const tinygltf::Model& model, int idxNodo, const glm::mat4& ma
                     vertices.push_back(t[0]); vertices.push_back(t[1]);
                 }
                 else { vertices.push_back(0.0f); vertices.push_back(0.0f); }
+                // Conservar el color por vértice del modelo; si no existe, usa blanco
+            // para que ese atributo no altere el color del material ni su textura
+                if (pColor)
+                {
+                    const float* c = (const float*)(pColor + i * strideColor);
+
+                    vertices.push_back(c[0]);
+                    vertices.push_back(c[1]);
+                    vertices.push_back(c[2]);
+                    vertices.push_back(c[3]);
+                }
+                else
+                {
+                    // Blanco para los modelos que no tienen colores por vértice
+                    vertices.push_back(1.0f);
+                    vertices.push_back(1.0f);
+                    vertices.push_back(1.0f);
+                    vertices.push_back(1.0f);
+                }
 
                 // Para calcular el tamaño total del modelo (caja que lo envuelve)
                 glm::vec3 enMundo = glm::vec3(matrizMundo * glm::vec4(p[0], p[1], p[2], 1.0f));
@@ -262,7 +308,8 @@ void procesarNodo(const tinygltf::Model& model, int idxNodo, const glm::mat4& ma
                 bbMax = glm::max(bbMax, enMundo);
             }
 
-            // ---- 2) Leer los índices (qué vértices forman cada triángulo) ----
+            // Los índices determinan qué vértices forman cada triángulo. Si la
+            // primitiva no tiene índices, utiliza los vértices en el orden recibido.
             std::vector<unsigned int> indices;
             if (prim.indices >= 0)
             {
@@ -284,7 +331,8 @@ void procesarNodo(const tinygltf::Model& model, int idxNodo, const glm::mat4& ma
                 for (unsigned int i = 0; i < numVertices; i++) indices.push_back(i);
             }
 
-            // ---- 3) Crear VAO / VBO / EBO de esta pieza ----
+            // Organiza los datos en VAO, VBO y EBO. Los atributos quedan asociados
+            // a las posiciones, normales, coordenadas UV y colores de cada vértice.
             Pieza pieza;
             pieza.matriz = matrizMundo;
             pieza.numIndices = (GLsizei)indices.size();
@@ -299,15 +347,25 @@ void procesarNodo(const tinygltf::Model& model, int idxNodo, const glm::mat4& ma
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, pieza.EBO);   // el EBO se queda guardado dentro del VAO
             glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
 
-            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);                    // posición
+            // Posición
+            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12 * sizeof(float), (void*)0);
             glEnableVertexAttribArray(0);
-            glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));  // normal
+
+            // Normal
+            glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 12 * sizeof(float), (void*)(3 * sizeof(float)));
             glEnableVertexAttribArray(1);
-            glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));  // uv
+
+            // Coordenadas de textura
+            glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 12 * sizeof(float), (void*)(6 * sizeof(float)));
             glEnableVertexAttribArray(2);
+
+            // Color
+            glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, 12 * sizeof(float), (void*)(8 * sizeof(float)));
+            glEnableVertexAttribArray(3);
             glBindVertexArray(0);
 
-            // ---- 4) Material de esta pieza (colores y texturas) ----
+            // Recupera el material de la primitiva como color base, textura principal,
+            // textura emisiva y modo de transparencia.
             if (prim.material >= 0)
             {
                 const tinygltf::Material& mat = model.materials[prim.material];
@@ -322,71 +380,33 @@ void procesarNodo(const tinygltf::Model& model, int idxNodo, const glm::mat4& ma
         }
     }
 
+    // Continúa el recorrido con los nodos hijos, conservando la transformación
+    // acumulada de sus nodos padres.
     for (int hijo : nodo.children)
         procesarNodo(model, hijo, matrizMundo, piezas, bbMin, bbMax);
 }
+// ==========================================================================
+//                           CURVAS DE BÉZIER
+// ==========================================================================
+// Evalúa una curva cúbica a partir de cuatro puntos de control. El parámetro t
+// recorre la curva entre 0 y 1 y permite obtener la posición del objeto en ella.
+glm::vec3 bezierCubica(
+    glm::vec3 P0,
+    glm::vec3 P1,
+    glm::vec3 P2,
+    glm::vec3 P3,
+    float t)
+{
+    float u = 1.0f - t;
+
+    return u * u * u * P0
+        + 3.0f * u * u * t * P1
+        + 3.0f * u * t * t * P2
+        + t * t * t * P3;
+}
 
 // ==========================================================================
-//  SHADERS
-// ==========================================================================
-const char* vertexShaderSource =
-"#version 330 core\n"
-"layout (location=0) in vec3 apos;\n"
-"layout (location=1) in vec3 aNormal;\n"
-"layout (location=2) in vec2 aTexCoord;\n"
-"out vec2 TexCoord;\n"
-"out vec3 FragPos;\n"
-"out vec3 Normal;\n"
-"uniform mat4 model;\n"
-"uniform mat4 view;\n"
-"uniform mat4 projection;\n"
-"uniform vec2 uvScale;\n"
-"void main()\n"
-"{\n"
-"vec4 posicionMundo = model * vec4(apos, 1.0);\n"
-"FragPos = posicionMundo.xyz;\n"
-"Normal = mat3(transpose(inverse(model))) * aNormal;\n"
-"gl_Position = projection * view * posicionMundo;\n"
-"TexCoord = aTexCoord * uvScale;\n"
-"}\0";
-
-const char* fragmentShaderSource =
-"#version 330 core\n"
-"in vec2 TexCoord;\n"
-"in vec3 FragPos;\n"
-"in vec3 Normal;\n"
-"out vec4 FragColor;\n"
-"uniform sampler2D texColor;\n"
-"uniform sampler2D texEmisiva;\n"
-"uniform bool tieneEmisiva;\n"
-"uniform vec4 colorBase;\n"
-"uniform vec3 viewPos;\n"
-"uniform vec3 lightPos[3];\n"
-"uniform vec3 lightColor[3];\n"
-"void main()\n"
-"{\n"
-"vec4 base = texture(texColor, TexCoord) * colorBase;\n"
-"vec3 normal = normalize(Normal);\n"
-"vec3 iluminacion = base.rgb * 0.28;\n"
-"for (int i = 0; i < 3; i++)\n"
-"{\n"
-"vec3 haciaLuz = lightPos[i] - FragPos;\n"
-"float distancia = length(haciaLuz);\n"
-"vec3 direccionLuz = normalize(haciaLuz);\n"
-"float difusa = max(dot(normal, direccionLuz), 0.0);\n"
-"vec3 vista = normalize(viewPos - FragPos);\n"
-"vec3 medio = normalize(direccionLuz + vista);\n"
-"float especular = pow(max(dot(normal, medio), 0.0), 32.0);\n"
-"float atenuacion = 1.0 / (1.0 + 0.12 * distancia + 0.035 * distancia * distancia);\n"
-"iluminacion += base.rgb * lightColor[i] * difusa * atenuacion * 1.8;\n"
-"iluminacion += lightColor[i] * especular * atenuacion * 0.22;\n"
-"}\n"
-"vec3 color = iluminacion;\n"
-"if (tieneEmisiva) color += texture(texEmisiva, TexCoord).rgb;\n"
-"FragColor = vec4(color, base.a);\n"
-"}\n\0";
-
-//  MAIN  -  siguiendo los 6 momentos del profe
+//                         INICIO DE LA APLICACIÓN
 // ==========================================================================
 int main()
 {
@@ -437,24 +457,19 @@ int main()
     unsigned int indicesCuadrado[] = { 0, 1, 2,   2, 3, 0 };
 
     // ================= 3) SHADER COMPILATION =================
-    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
-    glCompileShader(vertexShader);
-    revisarShader(vertexShader, "vertex shader");
+    Shader shader("Shaders/vertexShader.glsl", "Shaders/fragmentShader.glsl");
 
-    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
-    glCompileShader(fragmentShader);
-    revisarShader(fragmentShader, "fragment shader");
+    if (shader.ID == 0)
+    {
+        std::cout << "Error al crear el programa de shaders." << std::endl;
+        glfwTerminate();
+        return -1;
+    }
 
-    GLuint ShaderProgram = glCreateProgram();
-    glAttachShader(ShaderProgram, vertexShader);
-    glAttachShader(ShaderProgram, fragmentShader);
-    glLinkProgram(ShaderProgram);
+    GLuint ShaderProgram = shader.ID;
 
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
-
+    // Obtiene las ubicaciones de las variables uniformes que conectan el código
+    // de C++ con los shaders: matrices, materiales, cámara y fuentes de luz.
     GLint modelLoc = glGetUniformLocation(ShaderProgram, "model");
     GLint viewLoc = glGetUniformLocation(ShaderProgram, "view");
     GLint projLoc = glGetUniformLocation(ShaderProgram, "projection");
@@ -462,18 +477,21 @@ int main()
     GLint colorBaseLoc = glGetUniformLocation(ShaderProgram, "colorBase");
     GLint tieneEmisivaLoc = glGetUniformLocation(ShaderProgram, "tieneEmisiva");
     GLint viewPosLoc = glGetUniformLocation(ShaderProgram, "viewPos");
-    GLint lightPosLoc[3] = {
+    GLint lightPosLoc[4] = {
         glGetUniformLocation(ShaderProgram, "lightPos[0]"),
         glGetUniformLocation(ShaderProgram, "lightPos[1]"),
-        glGetUniformLocation(ShaderProgram, "lightPos[2]")
-    };
-    GLint lightColorLoc[3] = {
-        glGetUniformLocation(ShaderProgram, "lightColor[0]"),
-        glGetUniformLocation(ShaderProgram, "lightColor[1]"),
-        glGetUniformLocation(ShaderProgram, "lightColor[2]")
+        glGetUniformLocation(ShaderProgram, "lightPos[2]"),
+        glGetUniformLocation(ShaderProgram, "lightPos[3]")
     };
 
-    glUseProgram(ShaderProgram);
+    GLint lightColorLoc[4] = {
+     glGetUniformLocation(ShaderProgram, "lightColor[0]"),
+     glGetUniformLocation(ShaderProgram, "lightColor[1]"),
+     glGetUniformLocation(ShaderProgram, "lightColor[2]"),
+     glGetUniformLocation(ShaderProgram, "lightColor[3]")
+    };
+
+    shader.usar();
     glUniform1i(glGetUniformLocation(ShaderProgram, "texColor"), 0);     // texColor usa la unidad 0
     glUniform1i(glGetUniformLocation(ShaderProgram, "texEmisiva"), 1);   // texEmisiva usa la unidad 1
 
@@ -498,8 +516,9 @@ int main()
     glEnableVertexAttribArray(2);
     glBindVertexArray(0);
 
-    // ---- Carga de los tres modelos .glb ----
-    // Cada modelo conserva sus propias piezas y su propia escala.
+    // CARGO Y NORMALIZO LOS MODELOS GLTF
+    // Cada archivo se recorre para recuperar sus piezas. Después ajusta su escala
+    // a la altura indicada y lo centro horizontalmente para ubicarlo en la escena.
     auto cargarModelo = [&](const char* ruta, float alturaModelo)
         {
             ModeloCargado resultado;
@@ -540,6 +559,9 @@ int main()
     modelos.push_back(cargarModelo("arcade_machine.glb", 2.45f));
     modelos.push_back(cargarModelo("abandondedvandalised_arcade_machine.glb", 2.45f));
     modelos.push_back(cargarModelo("dance_dance_revolution.glb", 2.15f));
+    modelos.push_back(cargarModelo("pacman_arcade__animation.glb", 2.45f));
+    modelos.push_back(cargarModelo("girl_speedsculpt.glb", 2.00f));
+    modelos.push_back(cargarModelo("pacman_ghost.glb", 0.60f));
 
     // ---- Texturas de la habitación ----
     // stb_image voltea la imagen al cargarla para que coincida con las coordenadas (u,v) de OpenGL.
@@ -553,14 +575,75 @@ int main()
     unsigned char pixelBlanco[3] = { 255, 255, 255 };
     GLuint texBlanca = subirTextura(pixelBlanco, 1, 1, 3);
 
-    // ---- Dónde va cada máquina dentro de la habitación ----
-    // modelo: 0 = arcade original, 1 = arcade abandonada, 2 = Dance Dance Revolution
+    // ======================================================================
+    //                    ROTACIÓN Y UBICACIÓN DE OBJETOS
+    // ======================================================================
+    // Defino la posición y el ángulo inicial de cada máquina arcade. Estas
+    // transformaciones se aplican mediante matrices antes de dibujar cada modelo.
     struct ColocacionMaquina { int modelo; glm::vec3 posicion; float anguloY; };
     std::vector<ColocacionMaquina> maquinas = {
         { 0, glm::vec3(-2.7f, 0.0f, -largoCuarto / 2.0f + 1.0f), 35.0f },
         { 1, glm::vec3(-anchoCuarto / 2.0f + 1.0f, 0.0f, 0.0f), 90.0f },
         { 2, glm::vec3(2.7f, 0.0f, -largoCuarto / 2.0f + 1.5f), 0.0f }
     };
+    // Máquina de Pac-Man junto a la pared derecha
+    maquinas.push_back({
+        3,
+        glm::vec3(anchoCuarto / 2.0f - 1.0f, 0.0f, 0.0f),
+        -90.0f
+        });
+
+    // Dibuja todas las piezas de un modelo aplicando la transformación externa
+    // junto con la normalización y la matriz propia de cada pieza.
+    auto dibujarModelo = [&](const ModeloCargado& modeloActual,
+        const glm::mat4& transformacion)
+        {
+            glUniform2f(uvScaleLoc, 1.0f, 1.0f);
+
+            // Dibuja primero las piezas opacas y después las transparentes para
+            // que los elementos como los vidrios se representen al final.
+            for (int vuelta = 0; vuelta < 2; vuelta++)
+            {
+                bool dibujarTransparentes = (vuelta == 1);
+
+                for (const Pieza& pieza : modeloActual.piezas)
+                {
+                    if (pieza.transparente != dibujarTransparentes)
+                        continue;
+
+                    glm::mat4 modelPieza =
+                        transformacion * modeloActual.normalizacion * pieza.matriz;
+
+                    glUniformMatrix4fv(
+                        modelLoc, 1, GL_FALSE, glm::value_ptr(modelPieza));
+
+                    glUniform4fv(
+                        colorBaseLoc, 1, glm::value_ptr(pieza.colorBase));
+
+                    glUniform1i(
+                        tieneEmisivaLoc, pieza.texEmisiva != 0 ? 1 : 0);
+
+                    glActiveTexture(GL_TEXTURE0);
+                    glBindTexture(
+                        GL_TEXTURE_2D,
+                        pieza.texColor ? pieza.texColor : texBlanca);
+
+                    glActiveTexture(GL_TEXTURE1);
+                    glBindTexture(
+                        GL_TEXTURE_2D,
+                        pieza.texEmisiva ? pieza.texEmisiva : texBlanca);
+
+                    glActiveTexture(GL_TEXTURE0);
+
+                    glBindVertexArray(pieza.VAO);
+                    glDrawElements(
+                        GL_TRIANGLES,
+                        pieza.numIndices,
+                        GL_UNSIGNED_INT,
+                        0);
+                }
+            }
+        };
 
     float tiempoAnterior = (float)glfwGetTime();
 
@@ -571,7 +654,12 @@ int main()
         float deltaTime = tiempoActual - tiempoAnterior;     // tiempo entre frames
         tiempoAnterior = tiempoActual;
 
-        // ---- Teclado ----
+        // ==================================================================
+        // MATRICES DE TRASLACIÓN DE LA CÁMARA: MOVIMIENTO CON EL TECLADO
+        // ==================================================================
+        // W y S desplazan la cámara hacia adelante y atrás; A y D la desplazan
+        // lateralmente. El movimiento se calcula con deltaTime para que la
+        // velocidad no dependa de la cantidad de frames por segundo.
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
             glfwSetWindowShouldClose(window, true);          // ESC cierra (el mouse está atrapado)
 
@@ -584,7 +672,8 @@ int main()
         if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) cameraPos -= derecha * velocidad;
         if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) cameraPos += derecha * velocidad;
 
-        // La cámara no puede salirse de la habitación
+        // Limita la posición para que la cámara permanezca dentro de la habitación
+        // y mantiene fija la altura de los ojos durante el recorrido.
         float margen = 0.5f;
         float limiteX = anchoCuarto / 2.0f - margen;
         float limiteZ = largoCuarto / 2.0f - margen;
@@ -598,7 +687,9 @@ int main()
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glUseProgram(ShaderProgram);
 
-        // ---- Matrices ----
+        // La matriz de vista se construye con la posición, la dirección de mirada
+        // y el vector superior de la cámara. La matriz de perspectiva define
+        // el campo de visión y los planos cercano y lejano de la escena
         glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
         float aspect = (fbHeight != 0) ? (float)fbWidth / (float)fbHeight : 1.0f;
         glm::mat4 projection = glm::perspective(glm::radians(60.0f), aspect, 0.1f, 100.0f);
@@ -608,28 +699,42 @@ int main()
         glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
         glUniform3fv(viewPosLoc, 1, glm::value_ptr(cameraPos));
 
-        // Luces neon fijas: azul, magenta y cian.
-        glm::vec3 posicionesLuces[3] = {
+        // ==================================================================
+        //                         ILUMINACIÓN PHONG
+        // ==================================================================
+        // Define cuatro fuentes de luz: tres luces de colores para el efecto
+        // neón y una luz blanca ubicada en el centro del techo. Sus posiciones
+        // y colores se envían al fragment shader para calcular la iluminación.
+
+        glm::vec3 posicionesLuces[4] = {
             glm::vec3(-3.5f, 3.0f, -2.5f),
             glm::vec3(3.5f, 3.0f, -2.5f),
-            glm::vec3(0.0f, 3.0f,  2.5f)
+            glm::vec3(0.0f, 3.0f,  2.5f),
+            glm::vec3(0.0f, 3.4f,  0.0f)
         };
-        glm::vec3 coloresLuces[3] = {
+
+        glm::vec3 coloresLuces[4] = {
             glm::vec3(0.15f, 0.25f, 1.0f),
             glm::vec3(1.0f, 0.08f, 0.65f),
-            glm::vec3(0.05f, 0.85f, 1.0f)
+            glm::vec3(0.05f, 0.85f, 1.0f),
+            glm::vec3(0.20f, 0.20f, 0.20f)
         };
-        for (int i = 0; i < 3; i++)
+
+        // Envía las posiciones y los colores de las cuatro luces al shader.
+        for (int i = 0; i < 4; i++)
         {
             glUniform3fv(lightPosLoc[i], 1, glm::value_ptr(posicionesLuces[i]));
             glUniform3fv(lightColorLoc[i], 1, glm::value_ptr(coloresLuces[i]));
         }
 
-        // ============ HABITACIÓN ============
+        // ============ CONSTRUCCIÓN DE LA HABITACIÓN ============
+        // Reutiliza un mismo cuadrado para formar piso, techo y paredes. En cada
+        // cara cambia su matriz de modelo y asigna la textura correspondiente.
         glUniform4f(colorBaseLoc, 1.0f, 1.0f, 1.0f, 1.0f);
         glUniform1i(tieneEmisivaLoc, 0);
         glActiveTexture(GL_TEXTURE0);
         glBindVertexArray(VAOcuadrado);
+        glVertexAttrib4f(3, 1.0f, 1.0f, 1.0f, 1.0f);
 
         float tamanoBaldosa = 2.0f;   // una repetición de la imagen del piso mide 2 x 2 unidades
 
@@ -687,8 +792,10 @@ int main()
         glBindTexture(GL_TEXTURE_2D, texParedB ? texParedB : texBlanca);
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
-        // ============ MÁQUINAS ARCADE ============
-        // Dos vueltas: primero las piezas sólidas y al final las transparentes (vidrio)
+        // ============ DIBUJO DE LAS MÁQUINAS ARCADE ============
+        // Para cada máquina combina su traslación y rotación con la normalización
+        // del modelo y la matriz de cada pieza antes de enviarla a OpenGL.
+        // Primero se dibujan las piezas opacas y luego las transparentes.
         glUniform2f(uvScaleLoc, 1.0f, 1.0f);
         for (int vuelta = 0; vuelta < 2; vuelta++)
         {
@@ -719,13 +826,110 @@ int main()
                 }
             }
         }
+
+        // ==================================================================
+        //                         ROTACIÓN DE OBJETOS
+        // ==================================================================
+        // Ubica la figura en el centro de la habitación y crea una rotación
+        // continua alrededor del eje Y. El ángulo depende del tiempo transcurrido,
+        // por eso el movimiento se mantiene constante durante la ejecución.
+        glm::mat4 modeloChica = glm::translate(
+            glm::mat4(1.0f),
+            glm::vec3(0.0f, 0.0f, 0.0f)
+        );
+
+        float anguloChica = tiempoActual * 45.0f;
+
+        modeloChica = glm::rotate(
+            modeloChica,
+            glm::radians(anguloChica),
+            glm::vec3(0.0f, 1.0f, 0.0f)
+        );
+
+        dibujarModelo(modelos[4], modeloChica);
+
+
+        // ==================================================================
+        //                         CURVAS DE BÉZIER
+        // ==================================================================
+        // Los fantasmas recorren una trayectoria cerrada formada por cuatro
+        // curvas cúbicas conectadas. A, B, C y D son los puntos de unión; los
+        // otros dos puntos de cada tramo controlan la curvatura del recorrido.
+
+        glm::vec3 A(3.0f, 0.3f, 3.0f);    // Delantera derecha
+        glm::vec3 B(3.0f, 0.3f, -3.0f);   // Trasera derecha
+        glm::vec3 C(-3.0f, 0.3f, -3.0f);  // Trasera izquierda
+        glm::vec3 D(-3.0f, 0.3f, 3.0f);   // Delantera izquierda
+
+        // El tiempo determina el avance del recorrido. fmod mantiene el valor
+        // dentro de cuatro tramos; de ahí obtengo el tramo activo y su parámetro t.
+        float recorrido = fmod(tiempoActual * 0.12f, 4.0f);
+
+        int tramo = (int)recorrido;
+        float t = recorrido - tramo;
+
+        glm::vec3 P0, P1, P2, P3;
+
+        if (tramo == 0)
+        {
+            // De la esquina delantera derecha a la trasera derecha
+            P0 = A;
+            P1 = glm::vec3(4.0f, 0.8f, 1.0f);
+            P2 = glm::vec3(4.0f, 0.8f, -1.0f);
+            P3 = B;
+        }
+        else if (tramo == 1)
+        {
+            // De la esquina trasera derecha a la trasera izquierda
+            P0 = B;
+            P1 = glm::vec3(1.0f, 1.0f, -4.0f);
+            P2 = glm::vec3(-1.0f, 1.0f, -4.0f);
+            P3 = C;
+        }
+        else if (tramo == 2)
+        {
+            // De la esquina trasera izquierda a la delantera izquierda
+            P0 = C;
+            P1 = glm::vec3(-4.0f, 0.8f, -1.0f);
+            P2 = glm::vec3(-4.0f, 0.8f, 1.0f);
+            P3 = D;
+        }
+        else
+        {
+            // De la esquina delantera izquierda a la delantera derecha
+            P0 = D;
+            P1 = glm::vec3(-1.0f, 0.8f, 4.0f);
+            P2 = glm::vec3(1.0f, 0.8f, 4.0f);
+            P3 = A;
+        }
+
+        // Evalúa la curva activa para obtener la posición que tendrá el grupo
+        // de fantasmas en este instante de la animación.
+        glm::vec3 posicionFantasmas =
+            bezierCubica(P0, P1, P2, P3, t);
+
+
+        // Traslada el modelo 
+        // completo a la posición calculada sobre la curva.
+        glm::mat4 modeloFantasmas = glm::translate(
+            glm::mat4(1.0f),
+            posicionFantasmas
+        );
+
+        dibujarModelo(modelos[5], modeloFantasmas);
+
         glBindVertexArray(0);
+
 
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
 
-    // ================= 6) FREE MEMORY SPACE =================
+    // ======================================================================
+    //                         LIBERACIÓN DE RECURSOS
+    // ======================================================================
+    // Libera los buffers, las texturas, el programa de shaders y finalmente
+    // la ventana y el contexto de GLFW que se utilizaron durante la escena.
     glDeleteVertexArrays(1, &VAOcuadrado);
     glDeleteBuffers(1, &VBOcuadrado);
     glDeleteBuffers(1, &EBOcuadrado);
